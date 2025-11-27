@@ -12,6 +12,17 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  // Only allow GET and POST methods
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return new Response(
+      JSON.stringify({ error: 'Method not allowed' }),
+      {
+        status: 405,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    )
+  }
+
   try {
     // Get Supabase URL from request or environment
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || 
@@ -45,13 +56,13 @@ serve(async (req) => {
     const url = new URL(req.url)
     let requestId = url.searchParams.get('requestId') || url.searchParams.get('taskId')
     
-    if (!requestId) {
-      // Try to get from body if not in query params
+    // Only try to read body for POST requests
+    if (!requestId && req.method === 'POST') {
       try {
         const body = await req.json()
         requestId = body.requestId || body.taskId
       } catch {
-        // Body might be empty, that's okay
+        // Body might be empty or invalid, that's okay
       }
     }
 
