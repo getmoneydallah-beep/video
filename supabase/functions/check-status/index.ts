@@ -12,10 +12,18 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  // Log the request for debugging
+  console.log('Check-status request:', {
+    method: req.method,
+    url: req.url,
+    headers: Object.fromEntries(req.headers.entries()),
+  })
+
   // Only allow GET and POST methods
   if (req.method !== 'GET' && req.method !== 'POST') {
+    console.error('Method not allowed:', req.method)
     return new Response(
-      JSON.stringify({ error: 'Method not allowed' }),
+      JSON.stringify({ error: 'Method not allowed', method: req.method }),
       {
         status: 405,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -56,17 +64,22 @@ serve(async (req) => {
     const url = new URL(req.url)
     let requestId = url.searchParams.get('requestId') || url.searchParams.get('taskId')
     
-    // Only try to read body for POST requests
-    if (!requestId && req.method === 'POST') {
+    // Try to read body for POST requests or if not found in query
+    if (!requestId) {
       try {
         const body = await req.json()
         requestId = body.requestId || body.taskId
-      } catch {
+        console.log('Got requestId from body:', requestId)
+      } catch (error) {
+        console.log('Could not read body:', error.message)
         // Body might be empty or invalid, that's okay
       }
+    } else {
+      console.log('Got requestId from query:', requestId)
     }
 
     if (!requestId) {
+      console.error('No requestId found in query or body')
       return new Response(
         JSON.stringify({ error: 'requestId or taskId is required' }),
         { 
@@ -77,6 +90,7 @@ serve(async (req) => {
     }
 
     // Check status using fal.ai queue API
+    console.log('Calling fal.ai status API for requestId:', requestId)
     const statusResponse = await fetch(
       `https://queue.fal.run/fal-ai/veo3/fast/status?requestId=${encodeURIComponent(requestId)}`,
       {
@@ -88,8 +102,11 @@ serve(async (req) => {
       }
     )
 
+    console.log('fal.ai status response status:', statusResponse.status, statusResponse.statusText)
+
     if (!statusResponse.ok) {
       const errorData = await statusResponse.json().catch(() => ({ message: 'Unknown error' }))
+      console.error('fal.ai API error:', errorData)
       return new Response(
         JSON.stringify({ 
           error: 'Failed to check status',
@@ -167,17 +184,21 @@ serve(async (req) => {
       // Still return the status from API
     }
 
+    const responseData = {
+      success: true,
+      requestId,
+      taskId: requestId, // Keep for backward compatibility
+      status,
+      data: {
+        ...statusData,
+        videoUrl: resultUrls[0] || null,
+      },
+    }
+    
+    console.log('Returning response:', JSON.stringify(responseData))
+    
     return new Response(
-      JSON.stringify({
-        success: true,
-        requestId,
-        taskId: requestId, // Keep for backward compatibility
-        status,
-        data: {
-          ...statusData,
-          videoUrl: resultUrls[0] || null,
-        },
-      }),
+      JSON.stringify(responseData),
       {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
