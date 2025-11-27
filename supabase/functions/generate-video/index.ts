@@ -26,13 +26,13 @@ serve(async (req) => {
     // Initialize Supabase client
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Get API key from secrets
-    const apiKey = Deno.env.get('KIE_AI_API_KEY')
-    if (!apiKey) {
-      console.error('KIE_AI_API_KEY not found in environment')
+    // Get FAL API key from secrets
+    const falKey = Deno.env.get('FAL_KEY')
+    if (!falKey) {
+      console.error('FAL_KEY not found in environment')
       return new Response(
         JSON.stringify({ 
-          error: 'KIE_AI_API_KEY not configured',
+          error: 'FAL_KEY not configured',
           message: 'API key not found in Supabase secrets'
         }),
         {
@@ -46,15 +46,14 @@ serve(async (req) => {
     const body = await req.json()
     const {
       prompt,
-      imageUrls = [],
-      model = 'veo3_fast',
-      watermark,
-      callBackUrl,
       aspectRatio = '16:9',
-      seeds,
-      enableFallback = false,
-      enableTranslation = true,
-      generationType = 'REFERENCE_2_VIDEO'
+      duration = '8s',
+      resolution = '720p',
+      negativePrompt,
+      enhancePrompt = true,
+      autoFix = true,
+      seed,
+      generateAudio = true,
     } = body
 
     // Validate required fields
@@ -68,67 +67,80 @@ serve(async (req) => {
       )
     }
 
-    // Prepare request to Kie.ai API
-    const kieRequest = {
+    // Prepare request to fal.ai API
+    const falRequest: any = {
       prompt,
-      model,
-      aspectRatio,
-      enableFallback,
-      enableTranslation,
-      generationType,
-      ...(imageUrls.length > 0 && { imageUrls }),
-      ...(watermark && { watermark }),
-      ...(callBackUrl && { callBackUrl }),
-      ...(seeds && { seeds }),
+      aspect_ratio: aspectRatio,
+      duration: duration,
+      resolution: resolution,
+      enhance_prompt: enhancePrompt,
+      auto_fix: autoFix,
+      generate_audio: generateAudio,
     }
 
-    // Call Kie.ai API
-    const kieResponse = await fetch('https://api.kie.ai/api/v1/veo/generate', {
+    // Add optional fields
+    if (negativePrompt) {
+      falRequest.negative_prompt = negativePrompt
+    }
+    if (seed) {
+      falRequest.seed = seed
+    }
+
+    // Submit request to fal.ai queue
+    const falResponse = await fetch('https://queue.fal.run/fal-ai/veo3/fast', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Key ${falKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(kieRequest),
+      body: JSON.stringify({ input: falRequest }),
     })
 
-    const kieData = await kieResponse.json()
-    
-    console.log('Kie.ai API response:', JSON.stringify(kieData))
-
-    if (kieData.code !== 200 || !kieData.data?.taskId) {
-      console.error('Kie.ai API error:', kieData)
+    if (!falResponse.ok) {
+      const errorData = await falResponse.json().catch(() => ({ message: 'Unknown error' }))
+      console.error('fal.ai API error:', errorData)
       return new Response(
         JSON.stringify({ 
-          error: 'Failed to generate video',
-          details: kieData.msg || kieData,
-          code: kieData.code,
-          status: kieResponse.status
+          error: 'Failed to submit video generation',
+          details: errorData,
+          status: falResponse.status
         }),
         { 
-          status: kieResponse.status || 500,
+          status: falResponse.status || 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       )
     }
 
-    const taskId = kieData.data.taskId
+    const falData = await falResponse.json()
+    console.log('fal.ai API response:', JSON.stringify(falData))
+
+    const requestId = falData.request_id
+    if (!requestId) {
+      console.error('No request_id in response:', falData)
+      return new Response(
+        JSON.stringify({ 
+          error: 'Failed to get request ID from fal.ai',
+          details: falData
+        }),
+        { 
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
 
     // Store task in database
     const { error: dbError } = await supabaseClient
       .from('video_generations')
       .insert({
-        task_id: taskId,
+        task_id: requestId,
         prompt,
-        image_urls: imageUrls,
-        model,
-        watermark,
+        model: 'veo3_fast',
         aspect_ratio: aspectRatio,
-        seeds,
-        enable_fallback: enableFallback,
-        enable_translation: enableTranslation,
-        generation_type: generationType,
         status: 'pending',
+        // Store additional parameters as JSON
+        seeds: seed,
       })
 
     if (dbError) {
@@ -137,7 +149,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           success: true,
-          taskId,
+          requestId,
           message: 'Video generation started (but failed to save to database)',
           warning: dbError.message
         }),
@@ -151,7 +163,8 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        taskId,
+        requestId,
+        taskId: requestId, // Keep for backward compatibility
         message: 'Video generation started',
       }),
       {
@@ -173,4 +186,3 @@ serve(async (req) => {
     )
   }
 })
-

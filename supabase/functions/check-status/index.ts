@@ -26,29 +26,38 @@ serve(async (req) => {
     // Initialize Supabase client
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Get API key from secrets
-    const apiKey = Deno.env.get('KIE_AI_API_KEY')
-    if (!apiKey) {
-      throw new Error('KIE_AI_API_KEY not found in environment')
+    // Get FAL API key from secrets
+    const falKey = Deno.env.get('FAL_KEY')
+    if (!falKey) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'FAL_KEY not configured',
+          message: 'API key not found in Supabase secrets'
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
     }
 
-    // Get taskId from query parameters or request body
+    // Get requestId from query parameters or request body
     const url = new URL(req.url)
-    let taskId = url.searchParams.get('taskId')
+    let requestId = url.searchParams.get('requestId') || url.searchParams.get('taskId')
     
-    if (!taskId) {
+    if (!requestId) {
       // Try to get from body if not in query params
       try {
         const body = await req.json()
-        taskId = body.taskId
+        requestId = body.requestId || body.taskId
       } catch {
         // Body might be empty, that's okay
       }
     }
 
-    if (!taskId) {
+    if (!requestId) {
       return new Response(
-        JSON.stringify({ error: 'taskId is required' }),
+        JSON.stringify({ error: 'requestId or taskId is required' }),
         { 
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -56,59 +65,67 @@ serve(async (req) => {
       )
     }
 
-    // Call Kie.ai API to check status
-    // Try taskId as query parameter (most common for GET requests)
-    let kieResponse = await fetch(
-      `https://api.kie.ai/api/v1/veo/record-info?taskId=${encodeURIComponent(taskId)}`,
+    // Check status using fal.ai queue API
+    const statusResponse = await fetch(
+      `https://queue.fal.run/fal-ai/veo3/fast/status?requestId=${encodeURIComponent(requestId)}`,
       {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': `Key ${falKey}`,
           'Content-Type': 'application/json',
         },
       }
     )
 
-    // If that doesn't work, try with different parameter name or in body
-    if (!kieResponse.ok) {
-      // Try alternative: task_id instead of taskId
-      kieResponse = await fetch(
-        `https://api.kie.ai/api/v1/veo/record-info?task_id=${encodeURIComponent(taskId)}`,
-        {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      )
-    }
-
-    const kieData = await kieResponse.json()
-
-    if (kieData.code !== 200) {
+    if (!statusResponse.ok) {
+      const errorData = await statusResponse.json().catch(() => ({ message: 'Unknown error' }))
       return new Response(
         JSON.stringify({ 
           error: 'Failed to check status',
-          details: kieData.msg || kieData
+          details: errorData
         }),
         { 
-          status: kieResponse.status,
+          status: statusResponse.status,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       )
     }
 
-    const statusData = kieData.data
+    const statusData = await statusResponse.json()
+    console.log('fal.ai status response:', JSON.stringify(statusData))
 
-    // Determine status
+    // Determine status from fal.ai response
     let status = 'pending'
-    if (statusData.successFlag === 1) {
+    let resultUrls: string[] = []
+    
+    if (statusData.status === 'COMPLETED') {
       status = 'completed'
-    } else if (statusData.errorCode || statusData.errorMessage) {
-      status = 'failed'
-    } else if (statusData.response) {
+      // Fetch the result to get the video URL
+      try {
+        const resultResponse = await fetch(
+          `https://queue.fal.run/fal-ai/veo3/fast/result?requestId=${encodeURIComponent(requestId)}`,
+          {
+            method: 'GET',
+            headers: {
+              'Authorization': `Key ${falKey}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        )
+        
+        if (resultResponse.ok) {
+          const resultData = await resultResponse.json()
+          if (resultData.video?.url) {
+            resultUrls = [resultData.video.url]
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching result:', error)
+      }
+    } else if (statusData.status === 'IN_PROGRESS' || statusData.status === 'IN_QUEUE') {
       status = 'processing'
+    } else if (statusData.status === 'FAILED') {
+      status = 'failed'
     }
 
     // Update database with latest status
@@ -117,32 +134,22 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     }
 
-    if (statusData.response) {
-      updateData.result_urls = statusData.response.resultUrls || []
-      updateData.origin_urls = statusData.response.originUrls || []
-      updateData.resolution = statusData.response.resolution
+    if (resultUrls.length > 0) {
+      updateData.result_urls = resultUrls
     }
 
-    if (statusData.errorCode) {
-      updateData.error_code = statusData.errorCode
-    }
-
-    if (statusData.errorMessage) {
-      updateData.error_message = statusData.errorMessage
-    }
-
-    if (statusData.fallbackFlag !== undefined) {
-      updateData.fallback_flag = statusData.fallbackFlag
+    if (statusData.error) {
+      updateData.error_message = statusData.error
     }
 
     if (status === 'completed' || status === 'failed') {
-      updateData.completed_at = statusData.completeTime || new Date().toISOString()
+      updateData.completed_at = new Date().toISOString()
     }
 
     const { error: dbError } = await supabaseClient
       .from('video_generations')
       .update(updateData)
-      .eq('task_id', taskId)
+      .eq('task_id', requestId)
 
     if (dbError) {
       console.error('Database update error:', dbError)
@@ -152,9 +159,13 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        taskId: statusData.taskId || taskId,
+        requestId,
+        taskId: requestId, // Keep for backward compatibility
         status,
-        data: statusData,
+        data: {
+          ...statusData,
+          videoUrl: resultUrls[0] || null,
+        },
       }),
       {
         status: 200,
@@ -175,4 +186,3 @@ serve(async (req) => {
     )
   }
 })
-

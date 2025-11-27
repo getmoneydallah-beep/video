@@ -36,22 +36,17 @@ async function handleFormSubmit(e) {
   try {
     // Get form data
     const formData = new FormData(e.target)
-    const imageUrlsText = formData.get('imageUrls') || ''
-    const imageUrls = imageUrlsText
-      .split('\n')
-      .map(url => url.trim())
-      .filter(url => url.length > 0)
     
     const payload = {
       prompt: formData.get('prompt'),
-      model: formData.get('model') || 'veo3_fast',
       aspectRatio: formData.get('aspectRatio') || '16:9',
-      enableFallback: document.getElementById('enableFallback').checked,
-      enableTranslation: document.getElementById('enableTranslation').checked,
-      generationType: 'REFERENCE_2_VIDEO',
-      ...(imageUrls.length > 0 && { imageUrls }),
-      ...(formData.get('watermark') && { watermark: formData.get('watermark') }),
-      ...(formData.get('seeds') && { seeds: parseInt(formData.get('seeds')) }),
+      duration: formData.get('duration') || '8s',
+      resolution: formData.get('resolution') || '720p',
+      enhancePrompt: document.getElementById('enhancePrompt').checked,
+      autoFix: document.getElementById('autoFix').checked,
+      generateAudio: document.getElementById('generateAudio').checked,
+      ...(formData.get('negativePrompt') && { negativePrompt: formData.get('negativePrompt') }),
+      ...(formData.get('seed') && { seed: parseInt(formData.get('seed')) }),
     }
     
     // Call generate-video Edge Function
@@ -73,14 +68,15 @@ async function handleFormSubmit(e) {
     }
     
     // Show success message
-    alert(`Video generation started! Task ID: ${data.taskId}`)
+    const taskId = data.requestId || data.taskId
+    alert(`Video generation started! Request ID: ${taskId}`)
     
     // Reset form
     e.target.reset()
     
     // Reload generations and start polling
     await loadGenerations()
-    startPolling(data.taskId)
+    startPolling(taskId)
     
   } catch (error) {
     console.error('Error:', error)
@@ -198,7 +194,7 @@ function startPolling(taskId) {
   const pollInterval = setInterval(async () => {
     try {
       const response = await fetch(
-        `${CHECK_STATUS_URL}?taskId=${encodeURIComponent(taskId)}`,
+        `${CHECK_STATUS_URL}?requestId=${encodeURIComponent(taskId)}`,
         {
           headers: {
             'Authorization': `Bearer ${supabaseAnonKey}`,

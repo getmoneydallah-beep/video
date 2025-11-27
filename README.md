@@ -1,14 +1,15 @@
 # Video Generator App
 
-A web application for generating videos using the Kie.ai API, built with Supabase Edge Functions and a modern frontend.
+A web application for generating videos using Google's Veo 3 Fast model via fal.ai API, built with Supabase Edge Functions and a modern frontend.
 
 ## Features
 
-- 🎬 Generate videos from text prompts using Kie.ai API
+- 🎬 Generate videos from text prompts using Google's Veo 3 Fast model
 - 📊 View all video generation tasks in a dashboard
 - 🔄 Automatic status polling for pending videos
 - 📹 Video preview and download when generation completes
 - 🎨 Modern, responsive UI
+- 🎥 Support for 720p/1080p, 4-8 second videos, multiple aspect ratios
 
 ## Setup
 
@@ -16,7 +17,7 @@ A web application for generating videos using the Kie.ai API, built with Supabas
 
 - Supabase CLI installed and configured
 - Supabase project created
-- Kie.ai API key
+- fal.ai API key (FAL_KEY)
 
 ### Configuration
 
@@ -29,7 +30,7 @@ A web application for generating videos using the Kie.ai API, built with Supabas
      ```
 
 2. **API Key is already stored:**
-   - The Kie.ai API key has been stored in Supabase secrets
+   - The fal.ai API key (FAL_KEY) has been stored in Supabase secrets
    - No additional configuration needed
 
 ### Running the Application
@@ -77,19 +78,19 @@ video-1/
   ```json
   {
     "prompt": "A dog playing in a park",
-    "imageUrls": ["http://example.com/image1.jpg"],
-    "model": "veo3_fast",
-    "watermark": "MyBrand",
     "aspectRatio": "16:9",
-    "seeds": 12345,
-    "enableFallback": false,
-    "enableTranslation": true,
-    "generationType": "REFERENCE_2_VIDEO"
+    "duration": "8s",
+    "resolution": "720p",
+    "negativePrompt": "blurry, low quality",
+    "enhancePrompt": true,
+    "autoFix": true,
+    "generateAudio": true,
+    "seed": 12345
   }
   ```
 
 ### Check Status
-- **URL:** `https://xpkvqfkhbfvjqkeqsomb.supabase.co/functions/v1/check-status?taskId=<task_id>`
+- **URL:** `https://xpkvqfkhbfvjqkeqsomb.supabase.co/functions/v1/check-status?requestId=<request_id>`
 - **Method:** GET
 
 ## Database Schema
@@ -103,16 +104,16 @@ The `video_generations` table stores:
 ## Usage
 
 1. Fill out the generation form with:
-   - Prompt (required)
-   - Optional image URLs
-   - Model settings
-   - Aspect ratio
-   - Other options
+   - Prompt (required) - Be descriptive! Include subject, context, action, style, camera motion, etc.
+   - Aspect ratio (16:9, 9:16, or 1:1)
+   - Duration (4s, 6s, or 8s)
+   - Resolution (720p or 1080p)
+   - Optional: Negative prompt, seed, and other settings
 
 2. Click "Generate Video"
 
 3. The app will:
-   - Submit the request to Kie.ai
+   - Submit the request to fal.ai (Google's Veo 3 Fast model)
    - Store the task in the database
    - Start polling for status updates
    - Display the video when complete
@@ -122,8 +123,9 @@ The `video_generations` table stores:
 ## Troubleshooting
 
 - **CORS errors:** Make sure you're using the correct Supabase URL and anon key
-- **API errors:** Check that the Kie.ai API key is correctly stored in Supabase secrets
+- **API errors:** Check that the fal.ai API key (FAL_KEY) is correctly stored in Supabase secrets
 - **Status not updating:** Check browser console for errors, ensure polling is active
+- **Video generation fails:** Check the browser console for detailed error messages from the API
 
 ## Deployment
 

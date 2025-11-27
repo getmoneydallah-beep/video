@@ -30,55 +30,63 @@
           </div>
 
           <div class="form-group">
-            <label for="imageUrls">Image URLs (one per line, optional)</label>
+            <label for="negativePrompt">Negative Prompt (optional)</label>
             <textarea 
-              id="imageUrls" 
-              name="imageUrls" 
-              rows="3" 
-              placeholder="http://example.com/image1.jpg&#10;http://example.com/image2.jpg"
+              id="negativePrompt" 
+              name="negativePrompt" 
+              rows="2" 
+              placeholder="Things you don't want in the video"
             ></textarea>
-            <small>Enter one URL per line</small>
+            <small>Describe what to avoid in the video</small>
           </div>
 
           <div class="form-row">
-            <div class="form-group">
-              <label for="model">Model</label>
-              <select id="model" name="model">
-                <option value="veo3_fast" selected>veo3_fast</option>
-              </select>
-            </div>
-
             <div class="form-group">
               <label for="aspectRatio">Aspect Ratio</label>
               <select id="aspectRatio" name="aspectRatio">
-                <option value="16:9" selected>16:9</option>
-                <option value="9:16">9:16</option>
-                <option value="1:1">1:1</option>
-                <option value="4:3">4:3</option>
+                <option value="16:9" selected>16:9 (Landscape)</option>
+                <option value="9:16">9:16 (Portrait)</option>
+                <option value="1:1">1:1 (Square)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="duration">Duration</label>
+              <select id="duration" name="duration">
+                <option value="4s">4 seconds</option>
+                <option value="6s">6 seconds</option>
+                <option value="8s" selected>8 seconds</option>
               </select>
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-group">
-              <label for="watermark">Watermark (optional)</label>
-              <input type="text" id="watermark" name="watermark" placeholder="MyBrand">
+              <label for="resolution">Resolution</label>
+              <select id="resolution" name="resolution">
+                <option value="720p" selected>720p</option>
+                <option value="1080p">1080p</option>
+              </select>
             </div>
 
             <div class="form-group">
-              <label for="seeds">Seeds (optional)</label>
-              <input type="number" id="seeds" name="seeds" placeholder="12345">
+              <label for="seed">Seed (optional)</label>
+              <input type="number" id="seed" name="seed" placeholder="Random if empty">
             </div>
           </div>
 
           <div class="form-group checkbox-group">
             <label>
-              <input type="checkbox" id="enableFallback" name="enableFallback">
-              Enable Fallback
+              <input type="checkbox" id="enhancePrompt" name="enhancePrompt" checked>
+              Enhance Prompt
             </label>
             <label>
-              <input type="checkbox" id="enableTranslation" name="enableTranslation" checked>
-              Enable Translation
+              <input type="checkbox" id="autoFix" name="autoFix" checked>
+              Auto Fix
+            </label>
+            <label>
+              <input type="checkbox" id="generateAudio" name="generateAudio" checked>
+              Generate Audio
             </label>
           </div>
 
