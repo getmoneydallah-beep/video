@@ -13,21 +13,33 @@ serve(async (req) => {
   }
 
   try {
+    // Get Supabase URL from request or environment
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || 
+      req.headers.get('x-supabase-url') ||
+      'https://xpkvqfkhbfvjqkeqsomb.supabase.co'
+    
+    // Use service role key for database operations (bypasses RLS)
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || 
+      Deno.env.get('SUPABASE_ANON_KEY') || 
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhwa3ZxZmtoYmZ2anFrZXFzb21iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQyODEzODgsImV4cCI6MjA3OTg1NzM4OH0.SHcbSbCiS-aMi5TBkwXyvPVvcZJvikeztd9jGrg9BIg'
+    
     // Initialize Supabase client
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        global: {
-          headers: { Authorization: req.headers.get('Authorization')! },
-        },
-      }
-    )
+    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey)
 
     // Get API key from secrets
     const apiKey = Deno.env.get('KIE_AI_API_KEY')
     if (!apiKey) {
-      throw new Error('KIE_AI_API_KEY not found in environment')
+      console.error('KIE_AI_API_KEY not found in environment')
+      return new Response(
+        JSON.stringify({ 
+          error: 'KIE_AI_API_KEY not configured',
+          message: 'API key not found in Supabase secrets'
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
     }
 
     // Parse request body
@@ -81,15 +93,20 @@ serve(async (req) => {
     })
 
     const kieData = await kieResponse.json()
+    
+    console.log('Kie.ai API response:', JSON.stringify(kieData))
 
     if (kieData.code !== 200 || !kieData.data?.taskId) {
+      console.error('Kie.ai API error:', kieData)
       return new Response(
         JSON.stringify({ 
           error: 'Failed to generate video',
-          details: kieData.msg || kieData
+          details: kieData.msg || kieData,
+          code: kieData.code,
+          status: kieResponse.status
         }),
         { 
-          status: kieResponse.status,
+          status: kieResponse.status || 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       )
@@ -116,7 +133,19 @@ serve(async (req) => {
 
     if (dbError) {
       console.error('Database error:', dbError)
-      // Still return success since the API call succeeded
+      // Still return success since the API call succeeded, but log the error
+      return new Response(
+        JSON.stringify({
+          success: true,
+          taskId,
+          message: 'Video generation started (but failed to save to database)',
+          warning: dbError.message
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
     }
 
     return new Response(

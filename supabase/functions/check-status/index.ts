@@ -13,16 +13,18 @@ serve(async (req) => {
   }
 
   try {
+    // Get Supabase URL from request or environment
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || 
+      req.headers.get('x-supabase-url') ||
+      'https://xpkvqfkhbfvjqkeqsomb.supabase.co'
+    
+    // Use service role key for database operations (bypasses RLS)
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || 
+      Deno.env.get('SUPABASE_ANON_KEY') || 
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhwa3ZxZmtoYmZ2anFrZXFzb21iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQyODEzODgsImV4cCI6MjA3OTg1NzM4OH0.SHcbSbCiS-aMi5TBkwXyvPVvcZJvikeztd9jGrg9BIg'
+    
     // Initialize Supabase client
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        global: {
-          headers: { Authorization: req.headers.get('Authorization')! },
-        },
-      }
-    )
+    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey)
 
     // Get API key from secrets
     const apiKey = Deno.env.get('KIE_AI_API_KEY')

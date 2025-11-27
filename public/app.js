@@ -67,7 +67,9 @@ async function handleFormSubmit(e) {
     const data = await response.json()
     
     if (!response.ok || !data.success) {
-      throw new Error(data.error || data.message || 'Failed to generate video')
+      console.error('Full error response:', data)
+      const errorMsg = data.error || data.message || data.details || 'Failed to generate video'
+      throw new Error(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg))
     }
     
     // Show success message
