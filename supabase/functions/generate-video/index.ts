@@ -102,14 +102,15 @@ serve(async (req) => {
     }
 
     // Submit request to fal.ai queue
-    // According to docs, the body should have { input: {...} } wrapper
-    const falResponse = await fetch('https://queue.fal.run/fal-ai/veo3/fast', {
+    // Endpoint format: POST /fal-ai/veo3
+    // Body should have parameters directly, not wrapped in "input"
+    const falResponse = await fetch('https://queue.fal.run/fal-ai/veo3', {
       method: 'POST',
       headers: {
         'Authorization': `Key ${falKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ input: falRequest }),
+      body: JSON.stringify(falRequest),
     })
 
     if (!falResponse.ok) {

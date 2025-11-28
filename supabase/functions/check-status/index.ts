@@ -102,19 +102,19 @@ serve(async (req) => {
     }
 
     // Check status using fal.ai queue API
+    // Correct endpoint format: GET /fal-ai/veo3/requests/{request_id}/status
     let statusResponse
     let statusData
     
     try {
       statusResponse = await fetch(
-        'https://queue.fal.run/fal-ai/veo3/fast/status',
+        `https://queue.fal.run/fal-ai/veo3/requests/${encodeURIComponent(requestId)}/status`,
         {
-          method: 'POST',
+          method: 'GET',
           headers: {
             'Authorization': `Key ${falKey}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ requestId }),
         }
       )
 
@@ -155,16 +155,16 @@ serve(async (req) => {
     if (statusData.status === 'COMPLETED') {
       status = 'completed'
       // Fetch the result to get the video URL
+      // Correct endpoint format: GET /fal-ai/veo3/requests/{request_id}
       try {
         const resultResponse = await fetch(
-          'https://queue.fal.run/fal-ai/veo3/fast/result',
+          `https://queue.fal.run/fal-ai/veo3/requests/${encodeURIComponent(requestId)}`,
           {
-            method: 'POST',
+            method: 'GET',
             headers: {
               'Authorization': `Key ${falKey}`,
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ requestId }),
           }
         )
         
