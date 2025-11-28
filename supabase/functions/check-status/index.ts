@@ -90,19 +90,21 @@ serve(async (req) => {
     }
 
     // Check status using fal.ai queue API
+    // According to docs, status should be called with requestId in body (like the client library does)
     console.log('Calling fal.ai status API for requestId:', requestId)
     let statusResponse
     let statusData
     
     try {
       statusResponse = await fetch(
-        `https://queue.fal.run/fal-ai/veo3/fast/status?requestId=${encodeURIComponent(requestId)}`,
+        'https://queue.fal.run/fal-ai/veo3/fast/status',
         {
-          method: 'GET',
+          method: 'POST',
           headers: {
             'Authorization': `Key ${falKey}`,
             'Content-Type': 'application/json',
           },
+          body: JSON.stringify({ requestId }),
         }
       )
 
@@ -148,13 +150,14 @@ serve(async (req) => {
       // Fetch the result to get the video URL
       try {
         const resultResponse = await fetch(
-          `https://queue.fal.run/fal-ai/veo3/fast/result?requestId=${encodeURIComponent(requestId)}`,
+          'https://queue.fal.run/fal-ai/veo3/fast/result',
           {
-            method: 'GET',
+            method: 'POST',
             headers: {
               'Authorization': `Key ${falKey}`,
               'Content-Type': 'application/json',
             },
+            body: JSON.stringify({ requestId }),
           }
         )
         

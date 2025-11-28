@@ -87,14 +87,14 @@ serve(async (req) => {
     }
 
     // Submit request to fal.ai queue
-    // The queue API expects the input directly, not wrapped in an "input" object
+    // According to docs, the body should have { input: {...} } wrapper
     const falResponse = await fetch('https://queue.fal.run/fal-ai/veo3/fast', {
       method: 'POST',
       headers: {
         'Authorization': `Key ${falKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(falRequest),
+      body: JSON.stringify({ input: falRequest }),
     })
 
     if (!falResponse.ok) {
