@@ -307,16 +307,34 @@ async function checkStatus(taskId, buttonElement = null) {
       throw new Error(data.error || 'Failed to check status')
     }
     
-    // Reload generations to show updated status
-    await loadGenerations()
-    
-    // Show success message if completed
-    if (data.status === 'completed') {
+    // If video is ready, update the card immediately with the video
+    if (data.status === 'completed' && data.data?.videoUrl) {
+      updateGenerationCardWithVideo(taskId, data.data.videoUrl, data)
+      showToast('Video is ready!', 'success')
+    } else if (data.status === 'completed') {
+      // Video completed but URL not in response, reload to get it from database
+      await loadGenerations()
       showToast('Video generation completed!', 'success')
     } else if (data.status === 'failed') {
+      // Update card to show failed status
+      updateGenerationCardStatus(taskId, 'failed', data.data?.error || 'Generation failed')
       showToast('Video generation failed', 'error')
     } else {
-      showToast('Status updated', 'info')
+      // Still processing, just update status
+      updateGenerationCardStatus(taskId, data.status)
+      showToast('Still processing...', 'info')
+      
+      // Restore button for next check
+      if (button) {
+        button.disabled = false
+        button.textContent = 'Check Status'
+      }
+      return
+    }
+    
+    // Remove check status button if completed or failed
+    if (button && (data.status === 'completed' || data.status === 'failed')) {
+      button.remove()
     }
     
   } catch (error) {
@@ -327,6 +345,90 @@ async function checkStatus(taskId, buttonElement = null) {
     if (button) {
       button.disabled = false
       button.textContent = 'Check Status'
+    }
+  }
+}
+
+// Update generation card with video when ready
+function updateGenerationCardWithVideo(taskId, videoUrl, statusData) {
+  const generationItem = document.querySelector(`.generation-item[data-task-id="${taskId}"]`)
+  if (!generationItem) return
+  
+  // Check if video already exists
+  if (generationItem.querySelector('.video-preview')) {
+    return // Video already displayed
+  }
+  
+  // Find where to insert video (after generation-info, before error section)
+  const infoSection = generationItem.querySelector('.generation-info')
+  const errorSection = generationItem.querySelector('.error')
+  const checkButton = generationItem.querySelector('.check-status-btn')
+  
+  // Create video section
+  const videoSection = document.createElement('div')
+  videoSection.className = 'video-preview'
+  videoSection.innerHTML = `
+    <video controls preload="metadata">
+      <source src="${videoUrl}" type="video/mp4">
+      Your browser does not support the video tag.
+    </video>
+    <div class="video-links">
+      <a href="${videoUrl}" target="_blank" rel="noopener noreferrer">Download</a>
+    </div>
+  `
+  
+  // Insert video section
+  if (checkButton) {
+    checkButton.insertAdjacentElement('beforebegin', videoSection)
+  } else if (errorSection) {
+    errorSection.insertAdjacentElement('beforebegin', videoSection)
+  } else {
+    infoSection.insertAdjacentElement('afterend', videoSection)
+  }
+  
+  // Update status badge
+  const statusBadge = generationItem.querySelector('.status-badge')
+  if (statusBadge) {
+    statusBadge.className = 'status-badge status-completed'
+    statusBadge.textContent = 'completed'
+  }
+  
+  // Add completed time if available
+  if (statusData.completed_at) {
+    const completedDate = new Date(statusData.completed_at).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
+    })
+    const infoSection = generationItem.querySelector('.generation-info')
+    if (infoSection && !infoSection.textContent.includes('Completed:')) {
+      infoSection.innerHTML += `<br><strong>Completed:</strong> ${completedDate}`
+    }
+  }
+}
+
+// Update generation card status
+function updateGenerationCardStatus(taskId, status, errorMessage = null) {
+  const generationItem = document.querySelector(`.generation-item[data-task-id="${taskId}"]`)
+  if (!generationItem) return
+  
+  // Update status badge
+  const statusBadge = generationItem.querySelector('.status-badge')
+  if (statusBadge) {
+    statusBadge.className = `status-badge status-${status}`
+    statusBadge.textContent = status
+  }
+  
+  // Add error message if failed
+  if (status === 'failed' && errorMessage) {
+    const existingError = generationItem.querySelector('.error')
+    if (!existingError) {
+      const errorDiv = document.createElement('div')
+      errorDiv.className = 'error'
+      errorDiv.textContent = errorMessage
+      generationItem.appendChild(errorDiv)
     }
   }
 }
