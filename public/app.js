@@ -1,12 +1,47 @@
-// Supabase configuration
-const SUPABASE_URL = 'https://xpkvqfkhbfvjqkeqsomb.supabase.co'
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhwa3ZxZmtoYmZ2anFrZXFzb21iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQyODEzODgsImV4cCI6MjA3OTg1NzM4OH0.SHcbSbCiS-aMi5TBkwXyvPVvcZJvikeztd9jGrg9BIg'
+// Import configuration
+import {
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY,
+  GENERATE_VIDEO_URL,
+  CHECK_STATUS_URL,
+  calculateCreditCost
+} from './config.js'
 
-const supabaseAnonKey = SUPABASE_ANON_KEY
+// Initialize Supabase client (loaded via CDN in HTML)
+const supabaseScript = document.createElement('script')
+supabaseScript.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'
+supabaseScript.onload = initApp
+document.head.appendChild(supabaseScript)
 
-// Edge Function URLs
-const GENERATE_VIDEO_URL = `${SUPABASE_URL}/functions/v1/generate-video`
-const CHECK_STATUS_URL = `${SUPABASE_URL}/functions/v1/check-status`
+let supabase = null
+let currentUser = null
+let userCredits = 0
+
+function initApp() {
+  const { createClient } = window.supabase
+  supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+  // Check authentication and load app
+  checkAuth()
+}
+
+async function checkAuth() {
+  const { data: { session } } = await supabase.auth.getSession()
+
+  if (!session) {
+    // Not logged in, redirect to auth page
+    window.location.href = '/auth.html'
+    return
+  }
+
+  currentUser = session.user
+
+  // Load user profile and credits
+  await loadUserProfile()
+
+  // Set up the app
+  setupApp()
+}
 
 // Toast notification system
 function showToast(message, type = 'info') {
@@ -55,76 +90,167 @@ function createSkeletonLoader() {
   `.repeat(3)
 }
 
-// Initialize
-document.addEventListener('DOMContentLoaded', () => {
+async function loadUserProfile() {
+  try {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('id', currentUser.id)
+      .single()
+
+    if (error) throw error
+
+    userCredits = data.credits || 0
+    updateCreditsDisplay()
+  } catch (error) {
+    console.error('Error loading user profile:', error)
+    showToast('Failed to load user profile', 'error')
+  }
+}
+
+function updateCreditsDisplay() {
+  const creditsEl = document.getElementById('userCredits')
+  if (creditsEl) {
+    creditsEl.textContent = userCredits
+  }
+}
+
+function setupApp() {
   const form = document.getElementById('generateForm')
   const refreshBtn = document.getElementById('refreshBtn')
-  
+  const logoutBtn = document.getElementById('logoutBtn')
+
   form.addEventListener('submit', handleFormSubmit)
   refreshBtn.addEventListener('click', loadGenerations)
-  
-  // Load existing generations on page load
+
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', handleLogout)
+  }
+
+  // Update form with credit cost calculation
+  const resolutionSelect = document.getElementById('resolution')
+  const durationSelect = document.getElementById('duration')
+  const audioCheckbox = document.getElementById('generateAudio')
+
+  const updateCostEstimate = () => {
+    const resolution = resolutionSelect.value
+    const duration = durationSelect.value
+    const generateAudio = audioCheckbox.checked
+    const cost = calculateCreditCost(resolution, duration, generateAudio)
+
+    const estimateEl = document.getElementById('costEstimate')
+    if (estimateEl) {
+      estimateEl.textContent = cost
+    }
+  }
+
+  resolutionSelect.addEventListener('change', updateCostEstimate)
+  durationSelect.addEventListener('change', updateCostEstimate)
+  audioCheckbox.addEventListener('change', updateCostEstimate)
+
+  // Initial cost calculation
+  updateCostEstimate()
+
+  // Load existing generations
   loadGenerations()
-})
+}
+
+async function handleLogout() {
+  try {
+    const { error } = await supabase.auth.signOut()
+    if (error) throw error
+
+    // Redirect to auth page
+    window.location.href = '/auth.html'
+  } catch (error) {
+    console.error('Logout error:', error)
+    showToast('Failed to sign out', 'error')
+  }
+}
 
 async function handleFormSubmit(e) {
   e.preventDefault()
-  
+
   const submitBtn = document.getElementById('submitBtn')
   const formData = new FormData(e.target)
-  
+
   // Validate form
   const validation = validateForm(formData)
   if (!validation.valid) {
     showToast(validation.error, 'error')
     return
   }
-  
+
+  // Calculate credit cost
+  const resolution = formData.get('resolution') || '720p'
+  const duration = formData.get('duration') || '8s'
+  const generateAudio = document.getElementById('generateAudio').checked
+  const creditCost = calculateCreditCost(resolution, duration, generateAudio)
+
+  // Check if user has enough credits
+  if (userCredits < creditCost) {
+    showToast(`Insufficient credits. Need ${creditCost}, have ${userCredits}. Please purchase more credits.`, 'error')
+    return
+  }
+
   submitBtn.disabled = true
   submitBtn.textContent = 'Generating...'
-  
+
   try {
     const payload = {
       prompt: formData.get('prompt').trim(),
       aspectRatio: formData.get('aspectRatio') || '16:9',
-      duration: formData.get('duration') || '8s',
-      resolution: formData.get('resolution') || '720p',
+      duration: duration,
+      resolution: resolution,
       enhancePrompt: document.getElementById('enhancePrompt').checked,
       autoFix: document.getElementById('autoFix').checked,
-      generateAudio: document.getElementById('generateAudio').checked,
+      generateAudio: generateAudio,
       ...(formData.get('negativePrompt')?.trim() && { negativePrompt: formData.get('negativePrompt').trim() }),
       ...(formData.get('seed') && { seed: parseInt(formData.get('seed')) }),
     }
-    
-    // Call generate-video Edge Function
+
+    // Get the current session for the access token
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      throw new Error('Not authenticated. Please sign in again.')
+    }
+
+    // Call generate-video Edge Function with user token
     const response = await fetch(GENERATE_VIDEO_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseAnonKey}`,
+        'Authorization': `Bearer ${session.access_token}`,
       },
       body: JSON.stringify(payload),
     })
-    
+
     const data = await response.json()
-    
+
     if (!response.ok || !data.success) {
       console.error('Full error response:', data)
       const errorMsg = data.error || data.message || data.details || 'Failed to generate video'
       const errorText = typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg)
       throw new Error(errorText)
     }
-    
+
     // Show success toast
     const taskId = data.requestId || data.taskId
-    showToast('Video generation started successfully', 'success')
-    
+    showToast(`Video generation started! Cost: ${creditCost} credits`, 'success')
+
+    // Reload user profile to get updated credits
+    await loadUserProfile()
+
     // Reset form
     e.target.reset()
-    
+    // Re-initialize form state
+    document.getElementById('enhancePrompt').checked = true
+    document.getElementById('autoFix').checked = true
+    document.getElementById('generateAudio').checked = true
+
     // Reload generations
     await loadGenerations()
-    
+
   } catch (error) {
     console.error('Error:', error)
     showToast(error.message || 'Failed to generate video. Please try again.', 'error')
@@ -136,28 +262,25 @@ async function handleFormSubmit(e) {
 
 async function loadGenerations() {
   const listContainer = document.getElementById('generationsList')
-  
+
   // Show skeleton loader
   listContainer.innerHTML = createSkeletonLoader()
-  
+
   try {
-    // Fetch from Supabase database
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/video_generations?select=*&order=created_at.desc`,
-      {
-        headers: {
-          'apikey': supabaseAnonKey,
-          'Authorization': `Bearer ${supabaseAnonKey}`,
-        },
-      }
-    )
-    
-    if (!response.ok) {
-      throw new Error('Failed to load generations')
+    // Get the current session for the access token
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      throw new Error('Not authenticated')
     }
-    
-    const generations = await response.json()
-    
+
+    // Fetch from Supabase database (RLS will filter to user's own videos)
+    const { data: generations, error } = await supabase
+      .from('video_generations')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+
     if (generations.length === 0) {
       listContainer.innerHTML = `
         <div class="empty-state">
@@ -167,12 +290,12 @@ async function loadGenerations() {
       `
       return
     }
-    
+
     listContainer.innerHTML = generations.map(gen => createGenerationCard(gen)).join('')
-    
+
     // Attach event listeners to check status buttons
     attachCheckStatusListeners()
-    
+
   } catch (error) {
     console.error('Error loading generations:', error)
     listContainer.innerHTML = `
@@ -276,40 +399,46 @@ function attachCheckStatusListeners() {
 async function checkStatus(taskId, buttonElement = null) {
   const button = buttonElement || document.querySelector(`.check-status-btn[data-task-id="${taskId}"]`)
   const generationItem = document.querySelector(`.generation-item[data-task-id="${taskId}"]`)
-  
+
   // Show loading state
   if (button) {
     const originalText = button.textContent
     button.disabled = true
     button.textContent = 'Checking...'
   }
-  
+
   try {
+    // Get the current session for the access token
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      throw new Error('Not authenticated. Please sign in again.')
+    }
+
     // Call check-status Edge Function
     const response = await fetch(
       `${CHECK_STATUS_URL}?requestId=${encodeURIComponent(taskId)}`,
       {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${supabaseAnonKey}`,
+          'Authorization': `Bearer ${session.access_token}`,
         },
       }
     )
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
       throw new Error(errorData.error || `Status check failed: ${response.status}`)
     }
-    
+
     const data = await response.json()
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Failed to check status')
     }
-    
+
     // Reload generations to show updated status
     await loadGenerations()
-    
+
     // Show success message if completed
     if (data.status === 'completed') {
       showToast('Video generation completed!', 'success')
@@ -318,11 +447,11 @@ async function checkStatus(taskId, buttonElement = null) {
     } else {
       showToast('Status updated', 'info')
     }
-    
+
   } catch (error) {
     console.error('Error checking status:', error)
     showToast(error.message || 'Failed to check status', 'error')
-    
+
     // Restore button state
     if (button) {
       button.disabled = false

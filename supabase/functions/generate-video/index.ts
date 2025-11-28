@@ -21,18 +21,45 @@ serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
-    
-    // Use service role key for database operations (bypasses RLS)
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_ANON_KEY')
-    if (!supabaseServiceKey) {
+
+    // Get the authorization header
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
       return new Response(
-        JSON.stringify({ error: 'Supabase keys not configured' }),
+        JSON.stringify({ error: 'Missing authorization header' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Extract the JWT token
+    const token = authHeader.replace('Bearer ', '')
+
+    // Create Supabase client with the user's token
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')
+    if (!supabaseAnonKey) {
+      return new Response(
+        JSON.stringify({ error: 'Supabase configuration error' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
-    
-    // Initialize Supabase client
-    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey)
+
+    // Create client for user authentication
+    const supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: { Authorization: authHeader }
+      }
+    })
+
+    // Verify the user is authenticated
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token)
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized. Please sign in.' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const userId = user.id
 
     // Get FAL API key from secrets
     const falKey = Deno.env.get('FAL_KEY')
@@ -75,8 +102,44 @@ serve(async (req) => {
     if (!prompt) {
       return new Response(
         JSON.stringify({ error: 'Prompt is required' }),
-        { 
+        {
           status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
+
+    // Calculate credit cost
+    const durationSeconds = parseInt(duration.replace(/[^0-9]/g, ''))
+    let creditCost = 0
+    if (resolution === '1080p') {
+      creditCost = durationSeconds * 3
+    } else {
+      creditCost = durationSeconds * 2
+    }
+    // Audio penalty (costs 33% more if audio is disabled)
+    if (!generateAudio) {
+      creditCost += Math.ceil(creditCost * 0.33)
+    }
+
+    // Check user credits using the database function
+    const { data: deductResult, error: deductError } = await supabaseClient.rpc('deduct_credits', {
+      p_user_id: userId,
+      p_amount: creditCost,
+      p_description: `Video generation: ${resolution}, ${duration}`,
+      p_video_generation_id: null // Will update later with actual ID
+    })
+
+    if (deductError) {
+      console.error('Credit deduction error:', deductError)
+      return new Response(
+        JSON.stringify({
+          error: 'Insufficient credits',
+          message: deductError.message || 'You do not have enough credits for this generation.',
+          required: creditCost
+        }),
+        {
+          status: 402, // Payment Required
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       )
@@ -151,9 +214,11 @@ serve(async (req) => {
       .from('video_generations')
       .insert({
         task_id: requestId,
+        user_id: userId,
         prompt,
         model: 'veo3_fast',
         aspect_ratio: aspectRatio,
+        resolution: resolution,
         status: 'pending',
         ...(seed && { seeds: seed }),
       })

@@ -492,6 +492,78 @@ header p {
   width: 60%;
 }
 
+/* Header Content */
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+}
+
+.header-left {
+  flex: 1;
+  text-align: left;
+}
+
+.header-right {
+  flex-shrink: 0;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.credits-display {
+  background: var(--bg-tertiary);
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.credits-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.credits-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.btn-sm {
+  padding: 8px 16px;
+  font-size: 13px;
+}
+
+/* Cost Estimate */
+.cost-estimate {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+}
+
+.cost-estimate span:first-child {
+  color: var(--text-secondary);
+}
+
+.cost-estimate strong {
+  color: var(--accent);
+  font-size: 16px;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .container {
@@ -510,5 +582,24 @@ header p {
     right: 16px;
     left: 16px;
     max-width: none;
+  }
+
+  .header-content {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .header-left {
+    text-align: center;
+    width: 100%;
+  }
+
+  .header-right {
+    width: 100%;
+  }
+
+  .user-info {
+    width: 100%;
+    justify-content: space-between;
   }
 }

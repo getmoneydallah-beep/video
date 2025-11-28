@@ -9,8 +9,21 @@
 <body>
   <div class="container">
     <header>
-      <h1>Video Generator</h1>
-      <p>Create videos with AI using Google's Veo 3 Fast model</p>
+      <div class="header-content">
+        <div class="header-left">
+          <h1>Video Generator</h1>
+          <p>Create videos with AI using Google's Veo 3 Fast model</p>
+        </div>
+        <div class="header-right">
+          <div class="user-info">
+            <div class="credits-display">
+              <span class="credits-label">Credits:</span>
+              <span class="credits-value" id="userCredits">0</span>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="logoutBtn">Sign Out</button>
+          </div>
+        </div>
+      </div>
     </header>
 
     <div class="main-content">
@@ -90,6 +103,11 @@
                 Generate audio (uses 33% more credits if disabled)
               </label>
             </div>
+          </div>
+
+          <div class="cost-estimate">
+            <span>Estimated cost:</span>
+            <strong><span id="costEstimate">16</span> credits</strong>
           </div>
 
           <button type="submit" class="btn btn-primary" id="submitBtn">
