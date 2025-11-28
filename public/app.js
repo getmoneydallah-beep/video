@@ -8,6 +8,53 @@ const supabaseAnonKey = SUPABASE_ANON_KEY
 const GENERATE_VIDEO_URL = `${SUPABASE_URL}/functions/v1/generate-video`
 const CHECK_STATUS_URL = `${SUPABASE_URL}/functions/v1/check-status`
 
+// Toast notification system
+function showToast(message, type = 'info') {
+  const container = document.getElementById('toastContainer')
+  const toast = document.createElement('div')
+  toast.className = `toast toast-${type}`
+  toast.textContent = message
+  
+  container.appendChild(toast)
+  
+  // Auto remove after 4 seconds
+  setTimeout(() => {
+    toast.style.animation = 'slideIn 0.3s ease reverse'
+    setTimeout(() => toast.remove(), 300)
+  }, 4000)
+}
+
+// Input validation
+function validateForm(formData) {
+  const prompt = formData.get('prompt')?.trim()
+  
+  if (!prompt || prompt.length < 10) {
+    return { valid: false, error: 'Prompt must be at least 10 characters long' }
+  }
+  
+  if (prompt.length > 1000) {
+    return { valid: false, error: 'Prompt must be less than 1000 characters' }
+  }
+  
+  const seed = formData.get('seed')
+  if (seed && (isNaN(seed) || parseInt(seed) < 0)) {
+    return { valid: false, error: 'Seed must be a positive number' }
+  }
+  
+  return { valid: true }
+}
+
+// Skeleton loader
+function createSkeletonLoader() {
+  return `
+    <div class="skeleton-item">
+      <div class="skeleton skeleton-line" style="width: 70%; height: 16px; margin-bottom: 12px;"></div>
+      <div class="skeleton skeleton-line" style="width: 50%; height: 12px; margin-bottom: 8px;"></div>
+      <div class="skeleton skeleton-line" style="width: 60%; height: 12px;"></div>
+    </div>
+  `.repeat(3)
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('generateForm')
@@ -24,22 +71,28 @@ async function handleFormSubmit(e) {
   e.preventDefault()
   
   const submitBtn = document.getElementById('submitBtn')
+  const formData = new FormData(e.target)
+  
+  // Validate form
+  const validation = validateForm(formData)
+  if (!validation.valid) {
+    showToast(validation.error, 'error')
+    return
+  }
+  
   submitBtn.disabled = true
   submitBtn.textContent = 'Generating...'
   
   try {
-    // Get form data
-    const formData = new FormData(e.target)
-    
     const payload = {
-      prompt: formData.get('prompt'),
+      prompt: formData.get('prompt').trim(),
       aspectRatio: formData.get('aspectRatio') || '16:9',
       duration: formData.get('duration') || '8s',
       resolution: formData.get('resolution') || '720p',
       enhancePrompt: document.getElementById('enhancePrompt').checked,
       autoFix: document.getElementById('autoFix').checked,
       generateAudio: document.getElementById('generateAudio').checked,
-      ...(formData.get('negativePrompt') && { negativePrompt: formData.get('negativePrompt') }),
+      ...(formData.get('negativePrompt')?.trim() && { negativePrompt: formData.get('negativePrompt').trim() }),
       ...(formData.get('seed') && { seed: parseInt(formData.get('seed')) }),
     }
     
@@ -58,22 +111,23 @@ async function handleFormSubmit(e) {
     if (!response.ok || !data.success) {
       console.error('Full error response:', data)
       const errorMsg = data.error || data.message || data.details || 'Failed to generate video'
-      throw new Error(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg))
+      const errorText = typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg)
+      throw new Error(errorText)
     }
     
-    // Show success message
+    // Show success toast
     const taskId = data.requestId || data.taskId
-    alert(`Video generation started! Request ID: ${taskId}`)
+    showToast('Video generation started successfully', 'success')
     
     // Reset form
     e.target.reset()
     
-    // Reload generations (this will start polling if needed)
+    // Reload generations
     await loadGenerations()
     
   } catch (error) {
     console.error('Error:', error)
-    alert(`Error: ${error.message}`)
+    showToast(error.message || 'Failed to generate video. Please try again.', 'error')
   } finally {
     submitBtn.disabled = false
     submitBtn.textContent = 'Generate Video'
@@ -82,7 +136,9 @@ async function handleFormSubmit(e) {
 
 async function loadGenerations() {
   const listContainer = document.getElementById('generationsList')
-  listContainer.innerHTML = '<div class="loading">Loading...</div>'
+  
+  // Show skeleton loader
+  listContainer.innerHTML = createSkeletonLoader()
   
   try {
     // Fetch from Supabase database
@@ -103,7 +159,12 @@ async function loadGenerations() {
     const generations = await response.json()
     
     if (generations.length === 0) {
-      listContainer.innerHTML = '<div class="empty-state">No video generations yet. Create one above!</div>'
+      listContainer.innerHTML = `
+        <div class="empty-state">
+          <p>No video generations yet.</p>
+          <p style="margin-top: 8px; color: var(--text-tertiary);">Create your first video above!</p>
+        </div>
+      `
       return
     }
     
@@ -114,14 +175,30 @@ async function loadGenerations() {
     
   } catch (error) {
     console.error('Error loading generations:', error)
-    listContainer.innerHTML = `<div class="error">Error loading generations: ${error.message}</div>`
+    listContainer.innerHTML = `
+      <div class="error">
+        <strong>Error loading generations:</strong> ${error.message}
+      </div>
+    `
   }
 }
 
 function createGenerationCard(gen) {
   const statusClass = `status-${gen.status}`
-  const createdDate = new Date(gen.created_at).toLocaleString()
-  const completedDate = gen.completed_at ? new Date(gen.completed_at).toLocaleString() : null
+  const createdDate = new Date(gen.created_at).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  })
+  const completedDate = gen.completed_at ? new Date(gen.completed_at).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  }) : null
   
   let videoSection = ''
   if (gen.status === 'completed' && gen.result_urls && gen.result_urls.length > 0) {
@@ -129,13 +206,13 @@ function createGenerationCard(gen) {
       const originUrl = gen.origin_urls && gen.origin_urls[idx] ? gen.origin_urls[idx] : null
       return `
         <div class="video-preview">
-          <video controls>
+          <video controls preload="metadata">
             <source src="${url}" type="video/mp4">
             Your browser does not support the video tag.
           </video>
           <div class="video-links">
-            <a href="${url}" target="_blank">View Result</a>
-            ${originUrl ? `<a href="${originUrl}" target="_blank">View Original</a>` : ''}
+            <a href="${url}" target="_blank" rel="noopener noreferrer">Download</a>
+            ${originUrl ? `<a href="${originUrl}" target="_blank" rel="noopener noreferrer">Original</a>` : ''}
           </div>
         </div>
       `
@@ -144,15 +221,18 @@ function createGenerationCard(gen) {
   }
   
   const errorSection = gen.error_message 
-    ? `<div class="error" style="margin-top: 8px;">Error: ${gen.error_message}</div>`
+    ? `<div class="error">${escapeHtml(gen.error_message)}</div>`
     : ''
   
   // Add Check Status button for pending/processing items
   const checkStatusButton = (gen.status === 'pending' || gen.status === 'processing')
-    ? `<button class="btn btn-secondary btn-sm check-status-btn" data-task-id="${gen.task_id}" style="margin-top: 8px;">
+    ? `<button class="btn btn-secondary btn-sm check-status-btn" data-task-id="${gen.task_id}">
         Check Status
       </button>`
     : ''
+  
+  // Format task ID (show first 8 chars)
+  const shortTaskId = gen.task_id.substring(0, 8) + '...'
   
   return `
     <div class="generation-item" data-task-id="${gen.task_id}">
@@ -163,11 +243,11 @@ function createGenerationCard(gen) {
         </span>
       </div>
       <div class="generation-info">
-        <strong>Task ID:</strong> ${gen.task_id}<br>
-        <strong>Model:</strong> ${gen.model || 'N/A'}<br>
+        <strong>ID:</strong> ${shortTaskId}<br>
         <strong>Created:</strong> ${createdDate}<br>
         ${completedDate ? `<strong>Completed:</strong> ${completedDate}<br>` : ''}
         ${gen.resolution ? `<strong>Resolution:</strong> ${gen.resolution}<br>` : ''}
+        ${gen.aspect_ratio ? `<strong>Aspect:</strong> ${gen.aspect_ratio}<br>` : ''}
       </div>
       ${checkStatusButton}
       ${videoSection}
@@ -179,7 +259,11 @@ function createGenerationCard(gen) {
 // Attach event listeners to check status buttons
 function attachCheckStatusListeners() {
   document.querySelectorAll('.check-status-btn').forEach(button => {
-    button.addEventListener('click', async (e) => {
+    // Remove existing listeners to prevent duplicates
+    const newButton = button.cloneNode(true)
+    button.parentNode.replaceChild(newButton, button)
+    
+    newButton.addEventListener('click', async (e) => {
       const taskId = e.target.getAttribute('data-task-id')
       if (taskId) {
         await checkStatus(taskId, e.target)
@@ -190,7 +274,6 @@ function attachCheckStatusListeners() {
 
 // Manual status check function
 async function checkStatus(taskId, buttonElement = null) {
-  // Find the button if not provided
   const button = buttonElement || document.querySelector(`.check-status-btn[data-task-id="${taskId}"]`)
   const generationItem = document.querySelector(`.generation-item[data-task-id="${taskId}"]`)
   
@@ -214,7 +297,8 @@ async function checkStatus(taskId, buttonElement = null) {
     )
     
     if (!response.ok) {
-      throw new Error(`Status check failed: ${response.status}`)
+      const errorData = await response.json().catch(() => ({}))
+      throw new Error(errorData.error || `Status check failed: ${response.status}`)
     }
     
     const data = await response.json()
@@ -228,13 +312,16 @@ async function checkStatus(taskId, buttonElement = null) {
     
     // Show success message if completed
     if (data.status === 'completed') {
-      // The video should now be visible in the reloaded list
-      console.log('Video generation completed!')
+      showToast('Video generation completed!', 'success')
+    } else if (data.status === 'failed') {
+      showToast('Video generation failed', 'error')
+    } else {
+      showToast('Status updated', 'info')
     }
     
   } catch (error) {
     console.error('Error checking status:', error)
-    alert(`Error checking status: ${error.message}`)
+    showToast(error.message || 'Failed to check status', 'error')
     
     // Restore button state
     if (button) {
@@ -249,4 +336,3 @@ function escapeHtml(text) {
   div.textContent = text
   return div.innerHTML
 }
-

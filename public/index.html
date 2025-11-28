@@ -3,41 +3,41 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Video Generator - Kie.ai</title>
+  <title>Video Generator</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>🎬 Video Generator</h1>
-      <p>Generate videos using AI with Kie.ai</p>
+      <h1>Video Generator</h1>
+      <p>Create videos with AI using Google's Veo 3 Fast model</p>
     </header>
 
     <div class="main-content">
       <!-- Generation Form -->
       <section class="card form-section">
-        <h2>Generate New Video</h2>
+        <h2>New Video</h2>
         <form id="generateForm">
           <div class="form-group">
-            <label for="prompt">Prompt *</label>
+            <label for="prompt">Prompt</label>
             <textarea 
               id="prompt" 
               name="prompt" 
-              rows="3" 
-              placeholder="A dog playing in a park"
+              rows="4" 
+              placeholder="Describe the video you want to generate. Be specific about subject, action, style, and setting."
               required
             ></textarea>
+            <small>Include details about subject, context, action, style, camera motion, and ambiance</small>
           </div>
 
           <div class="form-group">
-            <label for="negativePrompt">Negative Prompt (optional)</label>
+            <label for="negativePrompt">Negative Prompt <span style="color: var(--text-tertiary); font-weight: 400;">(optional)</span></label>
             <textarea 
               id="negativePrompt" 
               name="negativePrompt" 
               rows="2" 
-              placeholder="Things you don't want in the video"
+              placeholder="Things to avoid in the video"
             ></textarea>
-            <small>Describe what to avoid in the video</small>
           </div>
 
           <div class="form-row">
@@ -70,24 +70,26 @@
             </div>
 
             <div class="form-group">
-              <label for="seed">Seed (optional)</label>
-              <input type="number" id="seed" name="seed" placeholder="Random if empty">
+              <label for="seed">Seed <span style="color: var(--text-tertiary); font-weight: 400;">(optional)</span></label>
+              <input type="number" id="seed" name="seed" placeholder="Leave empty for random">
             </div>
           </div>
 
-          <div class="form-group checkbox-group">
-            <label>
-              <input type="checkbox" id="enhancePrompt" name="enhancePrompt" checked>
-              Enhance Prompt
-            </label>
-            <label>
-              <input type="checkbox" id="autoFix" name="autoFix" checked>
-              Auto Fix
-            </label>
-            <label>
-              <input type="checkbox" id="generateAudio" name="generateAudio" checked>
-              Generate Audio
-            </label>
+          <div class="form-group">
+            <div class="checkbox-group">
+              <label>
+                <input type="checkbox" id="enhancePrompt" name="enhancePrompt" checked>
+                Enhance prompt automatically
+              </label>
+              <label>
+                <input type="checkbox" id="autoFix" name="autoFix" checked>
+                Auto-fix content policy issues
+              </label>
+              <label>
+                <input type="checkbox" id="generateAudio" name="generateAudio" checked>
+                Generate audio (uses 33% more credits if disabled)
+              </label>
+            </div>
           </div>
 
           <button type="submit" class="btn btn-primary" id="submitBtn">
@@ -99,7 +101,7 @@
       <!-- Status Dashboard -->
       <section class="card dashboard-section">
         <div class="dashboard-header">
-          <h2>Video Generations</h2>
+          <h2>Generations</h2>
           <button class="btn btn-secondary" id="refreshBtn">Refresh</button>
         </div>
         <div id="generationsList" class="generations-list">
@@ -109,7 +111,9 @@
     </div>
   </div>
 
+  <!-- Toast Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
   <script type="module" src="app.js"></script>
 </body>
 </html>
-

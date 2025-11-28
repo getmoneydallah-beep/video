@@ -13,15 +13,23 @@ serve(async (req) => {
   }
 
   try {
-    // Get Supabase URL from request or environment
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') || 
-      req.headers.get('x-supabase-url') ||
-      'https://xpkvqfkhbfvjqkeqsomb.supabase.co'
+    // Get Supabase URL from environment (required)
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    if (!supabaseUrl) {
+      return new Response(
+        JSON.stringify({ error: 'SUPABASE_URL not configured' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
     
     // Use service role key for database operations (bypasses RLS)
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || 
-      Deno.env.get('SUPABASE_ANON_KEY') || 
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhwa3ZxZmtoYmZ2anFrZXFzb21iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQyODEzODgsImV4cCI6MjA3OTg1NzM4OH0.SHcbSbCiS-aMi5TBkwXyvPVvcZJvikeztd9jGrg9BIg'
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_ANON_KEY')
+    if (!supabaseServiceKey) {
+      return new Response(
+        JSON.stringify({ error: 'Supabase keys not configured' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
     
     // Initialize Supabase client
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey)
@@ -29,7 +37,6 @@ serve(async (req) => {
     // Get FAL API key from secrets
     const falKey = Deno.env.get('FAL_KEY')
     if (!falKey) {
-      console.error('FAL_KEY not found in environment')
       return new Response(
         JSON.stringify({ 
           error: 'FAL_KEY not configured',
@@ -42,8 +49,16 @@ serve(async (req) => {
       )
     }
 
-    // Parse request body
-    const body = await req.json()
+    // Parse request body with error handling
+    let body
+    try {
+      body = await req.json()
+    } catch (error) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON in request body' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
     const {
       prompt,
       aspectRatio = '16:9',
@@ -140,8 +155,7 @@ serve(async (req) => {
         model: 'veo3_fast',
         aspect_ratio: aspectRatio,
         status: 'pending',
-        // Store additional parameters as JSON
-        seeds: seed,
+        ...(seed && { seeds: seed }),
       })
 
     if (dbError) {

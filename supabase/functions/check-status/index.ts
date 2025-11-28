@@ -12,12 +12,10 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
-  // Log the request for debugging
-  console.log('Check-status request:', {
-    method: req.method,
-    url: req.url,
-    headers: Object.fromEntries(req.headers.entries()),
-  })
+  // Log the request for debugging (only in development)
+  if (Deno.env.get('ENVIRONMENT') !== 'production') {
+    console.log('Check-status request:', { method: req.method, url: req.url })
+  }
 
   // Only allow GET and POST methods
   if (req.method !== 'GET' && req.method !== 'POST') {
@@ -32,15 +30,23 @@ serve(async (req) => {
   }
 
   try {
-    // Get Supabase URL from request or environment
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') || 
-      req.headers.get('x-supabase-url') ||
-      'https://xpkvqfkhbfvjqkeqsomb.supabase.co'
+    // Get Supabase URL from environment (required)
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    if (!supabaseUrl) {
+      return new Response(
+        JSON.stringify({ error: 'SUPABASE_URL not configured' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
     
     // Use service role key for database operations (bypasses RLS)
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || 
-      Deno.env.get('SUPABASE_ANON_KEY') || 
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhwa3ZxZmtoYmZ2anFrZXFzb21iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQyODEzODgsImV4cCI6MjA3OTg1NzM4OH0.SHcbSbCiS-aMi5TBkwXyvPVvcZJvikeztd9jGrg9BIg'
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_ANON_KEY')
+    if (!supabaseServiceKey) {
+      return new Response(
+        JSON.stringify({ error: 'Supabase keys not configured' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
     
     // Initialize Supabase client
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey)
@@ -64,22 +70,17 @@ serve(async (req) => {
     const url = new URL(req.url)
     let requestId = url.searchParams.get('requestId') || url.searchParams.get('taskId')
     
-    // Try to read body for POST requests or if not found in query
-    if (!requestId) {
+    // Try to read body only for POST requests
+    if (!requestId && req.method === 'POST') {
       try {
         const body = await req.json()
         requestId = body.requestId || body.taskId
-        console.log('Got requestId from body:', requestId)
       } catch (error) {
-        console.log('Could not read body:', error.message)
         // Body might be empty or invalid, that's okay
       }
-    } else {
-      console.log('Got requestId from query:', requestId)
     }
 
     if (!requestId) {
-      console.error('No requestId found in query or body')
       return new Response(
         JSON.stringify({ error: 'requestId or taskId is required' }),
         { 
@@ -89,9 +90,18 @@ serve(async (req) => {
       )
     }
 
+    // Validate requestId format (UUID-like)
+    if (!/^[0-9a-f-]{36}$/i.test(requestId)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid requestId format' }),
+        { 
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
+
     // Check status using fal.ai queue API
-    // According to docs, status should be called with requestId in body (like the client library does)
-    console.log('Calling fal.ai status API for requestId:', requestId)
     let statusResponse
     let statusData
     
@@ -107,8 +117,6 @@ serve(async (req) => {
           body: JSON.stringify({ requestId }),
         }
       )
-
-      console.log('fal.ai status response status:', statusResponse.status, statusResponse.statusText)
 
       if (!statusResponse.ok) {
         const errorData = await statusResponse.json().catch(() => ({ message: 'Unknown error' }))
@@ -126,7 +134,6 @@ serve(async (req) => {
       }
 
       statusData = await statusResponse.json()
-      console.log('fal.ai status response:', JSON.stringify(statusData))
     } catch (fetchError) {
       console.error('Error calling fal.ai API:', fetchError)
       return new Response(
@@ -214,8 +221,6 @@ serve(async (req) => {
         videoUrl: resultUrls[0] || null,
       },
     }
-    
-    console.log('Returning response:', JSON.stringify(responseData))
     
     return new Response(
       JSON.stringify(responseData),
