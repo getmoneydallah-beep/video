@@ -193,16 +193,14 @@ function startPolling(taskId) {
   
   const pollInterval = setInterval(async () => {
     try {
-      // Use POST method to avoid 405 errors with Supabase Edge Functions
+      // Use GET method - it works with Supabase Edge Functions
       const response = await fetch(
-        CHECK_STATUS_URL,
+        `${CHECK_STATUS_URL}?requestId=${encodeURIComponent(taskId)}`,
         {
-          method: 'POST',
+          method: 'GET',
           headers: {
-            'Content-Type': 'application/json',
             'Authorization': `Bearer ${supabaseAnonKey}`,
           },
-          body: JSON.stringify({ requestId: taskId }),
         }
       )
       

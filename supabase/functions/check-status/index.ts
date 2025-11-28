@@ -91,36 +91,53 @@ serve(async (req) => {
 
     // Check status using fal.ai queue API
     console.log('Calling fal.ai status API for requestId:', requestId)
-    const statusResponse = await fetch(
-      `https://queue.fal.run/fal-ai/veo3/fast/status?requestId=${encodeURIComponent(requestId)}`,
-      {
-        method: 'GET',
-        headers: {
-          'Authorization': `Key ${falKey}`,
-          'Content-Type': 'application/json',
-        },
+    let statusResponse
+    let statusData
+    
+    try {
+      statusResponse = await fetch(
+        `https://queue.fal.run/fal-ai/veo3/fast/status?requestId=${encodeURIComponent(requestId)}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Key ${falKey}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+
+      console.log('fal.ai status response status:', statusResponse.status, statusResponse.statusText)
+
+      if (!statusResponse.ok) {
+        const errorData = await statusResponse.json().catch(() => ({ message: 'Unknown error' }))
+        console.error('fal.ai API error:', errorData)
+        return new Response(
+          JSON.stringify({ 
+            error: 'Failed to check status',
+            details: errorData
+          }),
+          { 
+            status: statusResponse.status,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          }
+        )
       }
-    )
 
-    console.log('fal.ai status response status:', statusResponse.status, statusResponse.statusText)
-
-    if (!statusResponse.ok) {
-      const errorData = await statusResponse.json().catch(() => ({ message: 'Unknown error' }))
-      console.error('fal.ai API error:', errorData)
+      statusData = await statusResponse.json()
+      console.log('fal.ai status response:', JSON.stringify(statusData))
+    } catch (fetchError) {
+      console.error('Error calling fal.ai API:', fetchError)
       return new Response(
         JSON.stringify({ 
           error: 'Failed to check status',
-          details: errorData
+          message: fetchError.message 
         }),
         { 
-          status: statusResponse.status,
+          status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         }
       )
     }
-
-    const statusData = await statusResponse.json()
-    console.log('fal.ai status response:', JSON.stringify(statusData))
 
     // Determine status from fal.ai response
     let status = 'pending'
