@@ -8,12 +8,6 @@ const supabaseAnonKey = SUPABASE_ANON_KEY
 const GENERATE_VIDEO_URL = `${SUPABASE_URL}/functions/v1/generate-video`
 const CHECK_STATUS_URL = `${SUPABASE_URL}/functions/v1/check-status`
 
-// Polling interval in milliseconds (5 seconds)
-const POLL_INTERVAL = 5000
-
-// Track active polling
-const activePolls = new Set()
-
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('generateForm')
@@ -74,9 +68,8 @@ async function handleFormSubmit(e) {
     // Reset form
     e.target.reset()
     
-    // Reload generations and start polling
+    // Reload generations (this will start polling if needed)
     await loadGenerations()
-    startPolling(taskId)
     
   } catch (error) {
     console.error('Error:', error)
@@ -116,12 +109,8 @@ async function loadGenerations() {
     
     listContainer.innerHTML = generations.map(gen => createGenerationCard(gen)).join('')
     
-    // Start polling for pending/processing items
-    generations.forEach(gen => {
-      if (gen.status === 'pending' || gen.status === 'processing') {
-        startPolling(gen.task_id)
-      }
-    })
+    // Attach event listeners to check status buttons
+    attachCheckStatusListeners()
     
   } catch (error) {
     console.error('Error loading generations:', error)
@@ -158,16 +147,19 @@ function createGenerationCard(gen) {
     ? `<div class="error" style="margin-top: 8px;">Error: ${gen.error_message}</div>`
     : ''
   
-  const pollingIndicator = (gen.status === 'pending' || gen.status === 'processing')
-    ? '<span class="polling-indicator"></span>'
+  // Add Check Status button for pending/processing items
+  const checkStatusButton = (gen.status === 'pending' || gen.status === 'processing')
+    ? `<button class="btn btn-secondary btn-sm check-status-btn" data-task-id="${gen.task_id}" style="margin-top: 8px;">
+        Check Status
+      </button>`
     : ''
   
   return `
-    <div class="generation-item">
+    <div class="generation-item" data-task-id="${gen.task_id}">
       <div class="generation-header">
         <div class="generation-prompt">${escapeHtml(gen.prompt)}</div>
         <span class="status-badge ${statusClass}">
-          ${gen.status}${pollingIndicator}
+          ${gen.status}
         </span>
       </div>
       <div class="generation-info">
@@ -177,48 +169,79 @@ function createGenerationCard(gen) {
         ${completedDate ? `<strong>Completed:</strong> ${completedDate}<br>` : ''}
         ${gen.resolution ? `<strong>Resolution:</strong> ${gen.resolution}<br>` : ''}
       </div>
+      ${checkStatusButton}
       ${videoSection}
       ${errorSection}
     </div>
   `
 }
 
-function startPolling(taskId) {
-  // Don't start duplicate polling
-  if (activePolls.has(taskId)) {
-    return
+// Attach event listeners to check status buttons
+function attachCheckStatusListeners() {
+  document.querySelectorAll('.check-status-btn').forEach(button => {
+    button.addEventListener('click', async (e) => {
+      const taskId = e.target.getAttribute('data-task-id')
+      if (taskId) {
+        await checkStatus(taskId, e.target)
+      }
+    })
+  })
+}
+
+// Manual status check function
+async function checkStatus(taskId, buttonElement = null) {
+  // Find the button if not provided
+  const button = buttonElement || document.querySelector(`.check-status-btn[data-task-id="${taskId}"]`)
+  const generationItem = document.querySelector(`.generation-item[data-task-id="${taskId}"]`)
+  
+  // Show loading state
+  if (button) {
+    const originalText = button.textContent
+    button.disabled = true
+    button.textContent = 'Checking...'
   }
   
-  activePolls.add(taskId)
-  
-  const pollInterval = setInterval(async () => {
-    try {
-      // Use GET method - it works with Supabase Edge Functions
-      const response = await fetch(
-        `${CHECK_STATUS_URL}?requestId=${encodeURIComponent(taskId)}`,
-        {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${supabaseAnonKey}`,
-          },
-        }
-      )
-      
-      const data = await response.json()
-      
-      if (data.status === 'completed' || data.status === 'failed') {
-        // Stop polling
-        clearInterval(pollInterval)
-        activePolls.delete(taskId)
-        
-        // Reload generations to show updated status
-        await loadGenerations()
+  try {
+    // Call check-status Edge Function
+    const response = await fetch(
+      `${CHECK_STATUS_URL}?requestId=${encodeURIComponent(taskId)}`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+        },
       }
-    } catch (error) {
-      console.error('Polling error:', error)
-      // Continue polling despite errors
+    )
+    
+    if (!response.ok) {
+      throw new Error(`Status check failed: ${response.status}`)
     }
-  }, POLL_INTERVAL)
+    
+    const data = await response.json()
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to check status')
+    }
+    
+    // Reload generations to show updated status
+    await loadGenerations()
+    
+    // Show success message if completed
+    if (data.status === 'completed') {
+      // The video should now be visible in the reloaded list
+      console.log('Video generation completed!')
+    }
+    
+  } catch (error) {
+    console.error('Error checking status:', error)
+    alert(`Error checking status: ${error.message}`)
+    
+    // Restore button state
+    if (button) {
+      button.disabled = false
+      button.textContent = 'Check Status'
+    }
+  }
 }
 
 function escapeHtml(text) {
